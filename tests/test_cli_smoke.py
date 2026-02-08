@@ -29,7 +29,7 @@ def test_cli_current_smoke(tmp_path: Path, monkeypatch) -> None:
 
     result = runner.invoke(cli.app, ["current"])
     assert result.exit_code == 0
-    assert "0.62.1" in result.output
+    assert "OPA 0.62.1" in result.output
 
 
 def test_cli_which_smoke(tmp_path: Path, monkeypatch) -> None:
@@ -112,9 +112,7 @@ def test_cli_releases_table(tmp_path: Path, monkeypatch) -> None:
             prerelease=False,
         )
     ]
-    with mock.patch("opavm.cli.github.configured_repo", return_value="open-policy-agent/opa"), mock.patch(
-        "opavm.cli.github.fetch_recent_releases", return_value=releases_data
-    ):
+    with mock.patch("opavm.cli.github.fetch_recent_releases", return_value=releases_data):
         result = runner.invoke(cli.app, ["releases", "--limit", "1"])
 
     assert result.exit_code == 0
@@ -135,9 +133,7 @@ def test_cli_releases_regal_table_header_link(tmp_path: Path, monkeypatch) -> No
             prerelease=False,
         )
     ]
-    with mock.patch("opavm.cli.github.configured_repo", return_value="StyraInc/regal"), mock.patch(
-        "opavm.cli.github.fetch_recent_releases", return_value=releases_data
-    ):
+    with mock.patch("opavm.cli.github.fetch_recent_releases", return_value=releases_data):
         result = runner.invoke(cli.app, ["releases", "--tool", "regal", "--limit", "1"])
 
     assert result.exit_code == 0
@@ -170,6 +166,76 @@ def test_cli_exec_help_shows_opa_commands(tmp_path: Path, monkeypatch) -> None:
     assert "Available OPA Commands" in result.output
     assert "bench" in result.output
     assert "test" in result.output
+
+
+def test_cli_use_regal_sets_global_default(tmp_path: Path, monkeypatch) -> None:
+    runner = CliRunner()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPAVM_HOME", str(tmp_path / ".opavm"))
+
+    with mock.patch("opavm.cli.installer.is_installed", return_value=True):
+        result = runner.invoke(cli.app, ["use", "0.38.1", "--tool", "regal"])
+
+    assert result.exit_code == 0
+    assert "Global default for Regal set to 0.38.1." in result.output
+
+
+def test_cli_pin_regal_writes_regal_pin_file(tmp_path: Path, monkeypatch) -> None:
+    runner = CliRunner()
+    monkeypatch.chdir(tmp_path)
+
+    with mock.patch("opavm.cli.installer.is_installed", return_value=True):
+        result = runner.invoke(cli.app, ["pin", "0.38.1", "--tool", "regal"])
+
+    assert result.exit_code == 0
+    assert (tmp_path / ".regal-version").read_text(encoding="utf-8") == "0.38.1\n"
+
+
+def test_cli_current_regal_smoke(tmp_path: Path, monkeypatch) -> None:
+    runner = CliRunner()
+    monkeypatch.chdir(tmp_path)
+
+    (tmp_path / ".regal-version").write_text("0.38.1\n", encoding="utf-8")
+
+    result = runner.invoke(cli.app, ["current", "--tool", "regal"])
+    assert result.exit_code == 0
+    assert "Regal 0.38.1" in result.output
+
+
+def test_cli_which_regal_smoke(tmp_path: Path, monkeypatch) -> None:
+    runner = CliRunner()
+    monkeypatch.chdir(tmp_path)
+
+    opavm_home = tmp_path / ".opavm"
+    monkeypatch.setenv("OPAVM_HOME", str(opavm_home))
+
+    (tmp_path / ".regal-version").write_text("0.38.1\n", encoding="utf-8")
+    binary = installer.binary_path("0.38.1", tool="regal")
+    binary.parent.mkdir(parents=True)
+    binary.write_text("fake", encoding="utf-8")
+
+    result = runner.invoke(cli.app, ["which", "--tool", "regal"])
+    assert result.exit_code == 0
+    assert str(binary.resolve()) in result.output
+
+
+def test_cli_exec_regal_forwards_args_and_exit_code(tmp_path: Path, monkeypatch) -> None:
+    runner = CliRunner()
+    monkeypatch.chdir(tmp_path)
+
+    opavm_home = tmp_path / ".opavm"
+    monkeypatch.setenv("OPAVM_HOME", str(opavm_home))
+
+    (tmp_path / ".regal-version").write_text("0.38.1\n", encoding="utf-8")
+    binary = installer.binary_path("0.38.1", tool="regal")
+    binary.parent.mkdir(parents=True)
+    binary.write_text("fake", encoding="utf-8")
+
+    with mock.patch("opavm.cli.subprocess.run", return_value=mock.Mock(returncode=3)) as run_mock:
+        result = runner.invoke(cli.app, ["exec", "--tool", "regal", "--", "version"])
+
+    assert result.exit_code == 3
+    run_mock.assert_called_once_with([str(binary), "version"])
 
 
 def test_cli_install_regal_invokes_regal_tool(tmp_path: Path, monkeypatch) -> None:

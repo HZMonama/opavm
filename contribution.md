@@ -24,19 +24,38 @@ pytest -q
 
 Coverage is enforced via `pytest-cov` (`--cov-fail-under=70`) and produces `coverage.xml`.
 
-## CI validation (CircleCI)
+## Testing and quality gates
 
-Validate config:
+- Lint: `ruff check .`
+- Tests: `pytest -q`
+- Coverage gate: `--cov-fail-under=70`
+- Coverage artifact: `coverage.xml` (uploaded by CircleCI)
+
+The coverage threshold is an enforced floor and should be raised as test depth increases.
+
+## CircleCI (CI and release)
+
+This repo uses CircleCI for CI and publishing.
+
+### Validate CI config
 
 ```bash
 circleci config validate .circleci/config.yml
 ```
 
-Run the main CI job locally:
+### Run CI locally
+
+Run the main CI job locally (Docker executor):
 
 ```bash
 circleci local execute lint-test
 ```
+
+### Release flow
+
+- Tag push `vX.Y.Z` triggers the `release` workflow.
+- Publish job requires CircleCI context `pypi` with `PYPI_API_TOKEN`.
+- Version is derived from git tags via `setuptools-scm`; do not manually bump version fields for releases.
 
 ## Pull request expectations
 
@@ -45,13 +64,14 @@ circleci local execute lint-test
 - Preserve actionable user-facing errors.
 - Update `README.md` when command behavior or flags change.
 
-## Release notes
+## Release checklist
 
-For package releases:
+1. Ensure CI passes.
+2. Create/push release tag on the target commit:
 
-1. Bump version in:
-   - `pyproject.toml`
-   - `src/opavm/__init__.py`
-2. Ensure CI passes.
-3. Ensure CircleCI context `pypi` contains `PYPI_API_TOKEN`.
-4. Push a tag like `v0.1.1` to trigger publish workflow.
+```bash
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+3. Confirm CircleCI context `pypi` contains `PYPI_API_TOKEN`.

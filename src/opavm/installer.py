@@ -85,7 +85,7 @@ def install(
         on_status("resolving")
 
     os_name, arch = platform.normalized_os_arch()
-    repo = github.configured_repo(env_var=spec.repo_env_var, default_repo=spec.default_repo)
+    repo = spec.default_repo
     release = github.fetch_release(version, repo=repo)
     resolved_version = release.version
 

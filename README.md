@@ -21,8 +21,8 @@ Teams regularly run into:
 
 - Install specific OPA versions (or `latest`)
 - Install Regal (Rego linter/LSP) versions
-- Set a global default OPA version
-- Pin OPA per project with `.opa-version`
+- Set a global default version per tool (`opa` / `regal`)
+- Pin per project with `.opa-version` or `.regal-version`
 - Automatically switch versions by directory
 - CI-safe execution without PATH hacks
 - Rich progress bar UI for installs
@@ -63,48 +63,14 @@ Windows PowerShell:
 $env:Path = "$HOME\.opavm\shims;$env:Path"
 ```
 
-## GitHub repo override
+## GitHub API token
 
-By default, `opavm` uses:
+`opavm` uses fixed upstream repos:
 
 - `open-policy-agent/opa` for OPA release lookup
 - `StyraInc/regal` for Regal release lookup
 
-You can override with:
-
-- `OPAVM_GITHUB_REPO` for OPA
-- `OPAVM_REGAL_GITHUB_REPO` for Regal
-- `OPAVM_GITHUB_TOKEN` to increase GitHub API rate limits and support private repo access
-
-Current shell (macOS/Linux):
-
-```bash
-export OPAVM_GITHUB_REPO="open-policy-agent/opa"
-export OPAVM_REGAL_GITHUB_REPO="StyraInc/regal"
-```
-
-Persist on Ubuntu:
-
-```bash
-echo 'export OPAVM_GITHUB_REPO="open-policy-agent/opa"' >> ~/.bashrc
-echo 'export OPAVM_REGAL_GITHUB_REPO="StyraInc/regal"' >> ~/.bashrc
-source ~/.bashrc
-```
-
-Current PowerShell session:
-
-```powershell
-$env:OPAVM_GITHUB_REPO = "open-policy-agent/opa"
-$env:OPAVM_REGAL_GITHUB_REPO = "StyraInc/regal"
-```
-
-Persist in PowerShell profile:
-
-```powershell
-Add-Content -Path $PROFILE -Value '$env:OPAVM_GITHUB_REPO = "open-policy-agent/opa"'
-Add-Content -Path $PROFILE -Value '$env:OPAVM_REGAL_GITHUB_REPO = "StyraInc/regal"'
-. $PROFILE
-```
+If you hit GitHub API rate limits, set `OPAVM_GITHUB_TOKEN`.
 
 ## Quick start
 
@@ -118,6 +84,7 @@ Set a global default:
 
 ```bash
 opavm use 0.62.1
+opavm use 0.38.1 --tool regal
 ```
 
 Now:
@@ -134,14 +101,16 @@ Inside a repo that requires a specific version:
 
 ```bash
 opavm pin 0.61.0
+opavm pin 0.38.1 --tool regal
 ```
 
 If that version is not installed, `opavm` prompts to install it.
 
-This creates a `.opa-version` file:
+This creates tool-specific version files:
 
 ```text
-0.61.0
+.opa-version   # OPA
+.regal-version # Regal
 ```
 
 Anywhere inside that repo:
@@ -175,21 +144,24 @@ Switch global version:
 
 ```bash
 opavm use 0.63.0
+opavm use 0.38.1 --tool regal
 ```
 
 See what's active (and why):
 
 ```bash
 opavm current
+opavm current --tool regal
 ```
 
 Get the actual binary path:
 
 ```bash
 opavm which
+opavm which --tool regal
 ```
 
-`opavm which` prints the resolved OPA binary as an absolute path.
+`opavm which` prints the resolved binary as an absolute path.
 
 Show recent OPA releases:
 
@@ -202,6 +174,7 @@ Run OPA without relying on PATH (CI-safe):
 
 ```bash
 opavm exec -- test -v ./policy
+opavm exec --tool regal -- lint policy/
 ```
 
 Remove a version:
@@ -213,12 +186,13 @@ opavm uninstall 0.38.1 --tool regal
 
 ## How version resolution works
 
-When you run `opa` (via the shim):
+When you resolve a tool with `current`, `which`, or `exec`:
 
-1. Look for `.opa-version` in the current directory or parents
-2. If found, use that version
-3. Otherwise, use the global default
-4. If neither exists, error with guidance
+1. Look for the tool pin file in the current directory or parents
+2. Use `.opa-version` for OPA, `.regal-version` for Regal
+3. If found, use that version
+4. Otherwise, use the global default for that tool
+5. If neither exists, error with guidance
 
 This behavior is deterministic and transparent.
 
@@ -238,7 +212,7 @@ This behavior is deterministic and transparent.
 `- state.json
 ```
 
-`.opa-version` files live in your project repos and should usually be committed.
+`.opa-version` and `.regal-version` files live in your project repos and should usually be committed.
 
 ## CI usage
 
@@ -261,35 +235,7 @@ This guarantees the correct OPA version regardless of environment.
   - network connectivity failures
   - auth/permission failures
 
-## Testing and Quality Gates
-
-- Lint: `ruff check .`
-- Tests: `pytest -q`
-- Coverage gate: enforced with `pytest-cov` and `--cov-fail-under=70`
-- Coverage report artifact: `coverage.xml` (uploaded by CircleCI)
-
-The coverage threshold is intentionally a floor and should be raised as test depth increases.
-
-## CircleCI
-
-This repo uses CircleCI for CI and release.
-
-Validate CircleCI config locally:
-
-```bash
-circleci config validate .circleci/config.yml
-```
-
-Run CI job locally (Docker executor):
-
-```bash
-circleci local execute lint-test
-```
-
-Release flow:
-
-- Tag push `vX.Y.Z` triggers the `release` workflow.
-- `publish-pypi` requires CircleCI context `pypi` with env var `PYPI_API_TOKEN`.
+Contributor workflow, testing gates, and CircleCI release details are in `contribution.md`.
 
 ## What opavm is not
 

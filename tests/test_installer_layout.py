@@ -42,8 +42,8 @@ def test_install_regal_layout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     fake_release = mock.Mock(version="0.38.1")
 
     with mock.patch("opavm.installer.platform.normalized_os_arch", return_value=("linux", "amd64")), mock.patch(
-        "opavm.installer.github.configured_repo", return_value="StyraInc/regal"
-    ), mock.patch("opavm.installer.github.fetch_release", return_value=fake_release), mock.patch(
+        "opavm.installer.github.fetch_release", return_value=fake_release
+    ) as fetch_release_mock, mock.patch(
         "opavm.installer.github.pick_asset_url", return_value="https://example.test/regal"
     ) as pick_mock, mock.patch("opavm.installer.download.download_binary") as mock_download, mock.patch(
         "opavm.installer.verify_binary"
@@ -61,3 +61,4 @@ def test_install_regal_layout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
         assert (config.base_dir() / "tools" / "regal" / "versions" / "0.38.1" / "regal").exists()
         expected_candidates = ["regal_Linux_x86_64"]
         assert pick_mock.call_args.args[1] == expected_candidates
+        assert fetch_release_mock.call_args.kwargs["repo"] == "StyraInc/regal"

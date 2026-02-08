@@ -2,31 +2,43 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from opavm import config
+from opavm import catalog, config
 from opavm.errors import VersionNotConfiguredError
 
 
-def find_pin_file(start: Path) -> Path | None:
+def pin_filename(tool: str = "opa") -> str:
+    spec = catalog.get_tool(tool)
+    return spec.pin_filename
+
+
+def find_pin_file(start: Path, tool: str = "opa") -> Path | None:
     current = start.resolve()
+    filename = pin_filename(tool)
     for directory in [current, *current.parents]:
-        pin = directory / ".opa-version"
+        pin = directory / filename
         if pin.exists():
             return pin
     return None
 
 
-def resolve_version(start: Path) -> tuple[str, str]:
-    pin_file = find_pin_file(start)
+def resolve_version(start: Path, tool: str = "opa") -> tuple[str, str]:
+    spec = catalog.get_tool(tool)
+    pin_file = find_pin_file(start, tool=spec.name)
     if pin_file:
         pinned = pin_file.read_text(encoding="utf-8").strip()
         if pinned:
             return pinned, f"pinned via {pin_file}"
 
-    state = config.load_state()
-    global_default = state.get("global_default")
+    global_default = config.get_global_default(spec.name)
     if global_default:
-        return str(global_default), "global default"
+        return global_default, "global default"
+
+    use_hint = "Run: opavm use <version>"
+    pin_hint = f"create {spec.pin_filename}"
+    if spec.name != "opa":
+        use_hint = f"Run: opavm use <version> --tool {spec.name}"
 
     raise VersionNotConfiguredError(
-        "No version configured.", "Run: opavm use <version> or create .opa-version."
+        "No version configured.",
+        f"{use_hint} or {pin_hint}.",
     )

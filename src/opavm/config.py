@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from typing import Any
 
 from opavm.errors import OpavmError
 
@@ -37,18 +38,37 @@ def ensure_layout() -> None:
     shims_dir().mkdir(parents=True, exist_ok=True)
 
 
-def load_state() -> dict[str, str | None]:
+def _default_state() -> dict[str, Any]:
+    return {"global_default": None, "global_defaults": {}}
+
+
+def load_state() -> dict[str, Any]:
     path = state_path()
     if not path.exists():
-        return {"global_default": None}
+        return _default_state()
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise OpavmError("Corrupt state file.", "Delete ~/.opavm/state.json and retry.") from exc
-    return {"global_default": raw.get("global_default")}
+    if not isinstance(raw, dict):
+        return _default_state()
+
+    state = _default_state()
+    state["global_default"] = raw.get("global_default")
+
+    global_defaults = raw.get("global_defaults")
+    if isinstance(global_defaults, dict):
+        state["global_defaults"] = {
+            str(tool): str(version)
+            for tool, version in global_defaults.items()
+            if isinstance(tool, str) and isinstance(version, str)
+        }
+    else:
+        state["global_defaults"] = {}
+    return state
 
 
-def save_state(data: dict[str, str | None]) -> None:
+def save_state(data: dict[str, Any]) -> None:
     ensure_layout()
     path = state_path()
     fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix="state.", suffix=".tmp")
@@ -62,3 +82,30 @@ def save_state(data: dict[str, str | None]) -> None:
     finally:
         if os.path.exists(tmp_name):
             os.remove(tmp_name)
+
+
+def get_global_default(tool: str = "opa") -> str | None:
+    state = load_state()
+    global_defaults = state.get("global_defaults")
+    if isinstance(global_defaults, dict):
+        value = global_defaults.get(tool)
+        if isinstance(value, str) and value.strip():
+            return value
+
+    if tool == "opa":
+        legacy = state.get("global_default")
+        if isinstance(legacy, str) and legacy.strip():
+            return legacy
+    return None
+
+
+def set_global_default(tool: str, version: str) -> None:
+    state = load_state()
+    global_defaults = state.get("global_defaults")
+    if not isinstance(global_defaults, dict):
+        global_defaults = {}
+    global_defaults[tool] = version
+    state["global_defaults"] = global_defaults
+    if tool == "opa":
+        state["global_default"] = version
+    save_state(state)

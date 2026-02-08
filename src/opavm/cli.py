@@ -20,8 +20,10 @@ app = typer.Typer(
         "[bold magenta]Tool Selection[/]\n"
         "- [cyan]opa[/cyan] (default)\n"
         "- [cyan]regal[/cyan]\n\n"
-        "Use [cyan]--tool[/cyan] on tool-aware commands like "
-        "[green]list[/green], [green]uninstall[/green], and [green]releases[/green].\n"
+        "Use [cyan]--tool[/cyan] on tool-aware commands: "
+        "[green]install[/green], [green]list[/green], [green]use[/green], [green]pin[/green], "
+        "[green]current[/green], [green]which[/green], [green]exec[/green], "
+        "[green]uninstall[/green], [green]releases[/green].\n"
         "For install you can use either [green]opavm install regal 0.38.1[/green] "
         "or [green]opavm install 0.38.1 --tool regal[/green]."
     ),
@@ -134,23 +136,33 @@ def _install_with_progress(tool: str, version: str) -> str:
         return installer.install(version, tool=spec.name, on_status=on_status, on_download=on_download)
 
 
-def _render_exec_help() -> None:
+def _render_exec_help(spec: catalog.ToolSpec) -> None:
     console.print()
-    console.print("Usage: opavm exec -- <opa-args>")
-    console.print("Resolves OPA version (.opa-version > global default) and forwards args.")
+    if spec.name == "opa":
+        console.print("Usage: opavm exec -- <opa-args>")
+    else:
+        console.print(f"Usage: opavm exec --tool {spec.name} -- <{spec.name}-args>")
+    console.print(
+        f"Resolves {spec.display_name} version ({spec.pin_filename} > global default) and forwards args."
+    )
     console.print()
     console.print("Examples")
-    console.print("opavm exec -- version")
-    console.print("opavm exec -- test -v ./policy")
-    console.print('opavm exec -- eval -i input.json -d policy.rego "data.example.allow"')
+    if spec.name == "opa":
+        console.print("opavm exec -- version")
+        console.print("opavm exec -- test -v ./policy")
+        console.print('opavm exec -- eval -i input.json -d policy.rego "data.example.allow"')
+    else:
+        console.print("opavm exec --tool regal -- version")
+        console.print("opavm exec --tool regal -- lint policy/")
     console.print()
 
-    table = Table(title="Available OPA Commands", box=box.SIMPLE_HEAVY, show_header=True)
-    table.add_column("Command", style="cyan")
-    table.add_column("Description")
-    for command, description in OPA_COMMANDS:
-        table.add_row(command, description)
-    console.print(table)
+    if spec.name == "opa":
+        table = Table(title="Available OPA Commands", box=box.SIMPLE_HEAVY, show_header=True)
+        table.add_column("Command", style="cyan")
+        table.add_column("Description")
+        for command, description in OPA_COMMANDS:
+            table.add_row(command, description)
+        console.print(table)
 
 
 @app.command()
@@ -214,55 +226,106 @@ def list_versions(
 
 
 @app.command()
-def use(version: str) -> None:
-    """Set global default OPA version."""
+def use(
+    version: str,
+    tool: str = typer.Option(
+        "opa",
+        "--tool",
+        "-t",
+        help="Tool to set global default for: `opa` or `regal`.",
+        rich_help_panel="Tool Selection",
+    ),
+) -> None:
+    """Set global default tool version."""
     try:
-        if not installer.is_installed(version):
-            raise VersionNotInstalledError(
-                "Version not installed.", f"Run: opavm install {version}"
+        spec = catalog.get_tool(tool)
+        if not installer.is_installed(version, tool=spec.name):
+            install_hint = (
+                f"Run: opavm install {version}"
+                if spec.name == "opa"
+                else f"Run: opavm install {spec.name} {version}"
             )
-        config.save_state({"global_default": version})
+            raise VersionNotInstalledError(
+                "Version not installed.",
+                install_hint,
+            )
+        config.set_global_default(spec.name, version)
     except OpavmError as err:
         _handle_error(err)
-    console.print(f"Global default set to {version}.")
+    console.print(f"Global default for {spec.display_name} set to {version}.")
 
 
 @app.command()
-def pin(version: str) -> None:
-    """Pin OPA version for current project."""
+def pin(
+    version: str,
+    tool: str = typer.Option(
+        "opa",
+        "--tool",
+        "-t",
+        help="Tool to pin in current project: `opa` or `regal`.",
+        rich_help_panel="Tool Selection",
+    ),
+) -> None:
+    """Pin tool version for current project."""
     try:
+        spec = catalog.get_tool(tool)
         pinned_version = version
-        if not installer.is_installed(version):
+        if not installer.is_installed(version, tool=spec.name):
             should_install = typer.confirm(
-                f"Version {version} is not installed. Install now?", default=True
+                f"{spec.display_name} version {version} is not installed. Install now?",
+                default=True,
             )
             if not should_install:
-                raise VersionNotInstalledError(
-                    "Version not installed.", f"Run: opavm install {version}"
+                install_hint = (
+                    f"Run: opavm install {version}"
+                    if spec.name == "opa"
+                    else f"Run: opavm install {spec.name} {version}"
                 )
-            pinned_version = _install_with_progress("opa", version)
-        pin_file = Path.cwd() / ".opa-version"
+                raise VersionNotInstalledError(
+                    "Version not installed.",
+                    install_hint,
+                )
+            pinned_version = _install_with_progress(spec.name, version)
+        pin_file = Path.cwd() / spec.pin_filename
         pin_file.write_text(f"{pinned_version}\n", encoding="utf-8")
     except OpavmError as err:
         _handle_error(err)
-    console.print(f"Pinned {pinned_version} in {pin_file}.")
+    console.print(f"Pinned {spec.display_name} {pinned_version} in {pin_file}.")
 
 
 @app.command()
-def current() -> None:
-    """Show active OPA version and resolution reason."""
+def current(
+    tool: str = typer.Option(
+        "opa",
+        "--tool",
+        "-t",
+        help="Tool to resolve current version for: `opa` or `regal`.",
+        rich_help_panel="Tool Selection",
+    ),
+) -> None:
+    """Show active tool version and resolution reason."""
     try:
-        version, reason = resolver.resolve_version(Path.cwd())
+        spec = catalog.get_tool(tool)
+        version, reason = resolver.resolve_version(Path.cwd(), tool=spec.name)
     except OpavmError as err:
         _handle_error(err)
-    console.print(f"{version} ({reason})")
+    console.print(f"{spec.display_name} {version} ({reason})")
 
 
 @app.command()
-def which() -> None:
-    """Print resolved OPA binary path."""
+def which(
+    tool: str = typer.Option(
+        "opa",
+        "--tool",
+        "-t",
+        help="Tool to print binary path for: `opa` or `regal`.",
+        rich_help_panel="Tool Selection",
+    ),
+) -> None:
+    """Print resolved tool binary path."""
     try:
-        _, _, binary = runner.resolved_binary_path(Path.cwd())
+        spec = catalog.get_tool(tool)
+        _, _, binary = runner.resolved_binary_path(Path.cwd(), tool=spec.name)
     except OpavmError as err:
         _handle_error(err)
     typer.echo(str(binary.resolve()))
@@ -275,14 +338,28 @@ def which() -> None:
         "help_option_names": [],
     }
 )
-def exec(ctx: typer.Context) -> None:
-    """Run OPA through resolved version and forward args."""
+def exec(
+    ctx: typer.Context,
+    tool: str = typer.Option(
+        "opa",
+        "--tool",
+        "-t",
+        help="Tool to execute: `opa` or `regal`.",
+        rich_help_panel="Tool Selection",
+    ),
+) -> None:
+    """Run tool through resolved version and forward args."""
+    try:
+        spec = catalog.get_tool(tool)
+    except OpavmError as err:
+        _handle_error(err)
+
     if len(ctx.args) == 1 and ctx.args[0] in {"-h", "--help", "help"}:
-        _render_exec_help()
+        _render_exec_help(spec)
         raise typer.Exit(code=0)
 
     try:
-        _, _, binary = runner.resolved_binary_path(Path.cwd())
+        _, _, binary = runner.resolved_binary_path(Path.cwd(), tool=spec.name)
     except OpavmError as err:
         _handle_error(err)
 
@@ -290,7 +367,7 @@ def exec(ctx: typer.Context) -> None:
     try:
         proc = subprocess.run(cmd)
     except OSError as exc:
-        _handle_error(OpavmError("Failed to execute OPA.", str(exc)))
+        _handle_error(OpavmError(f"Failed to execute {spec.display_name}.", str(exc)))
     raise typer.Exit(proc.returncode)
 
 
@@ -328,7 +405,7 @@ def releases(
     """Show recent tool releases from GitHub."""
     try:
         spec = catalog.get_tool(tool)
-        repo = github.configured_repo(env_var=spec.repo_env_var, default_repo=spec.default_repo)
+        repo = spec.default_repo
         releases_data = github.fetch_recent_releases(limit=limit, repo=repo)
     except OpavmError as err:
         _handle_error(err)

@@ -6,7 +6,6 @@ from typing import Sequence
 
 import httpx
 
-from opavm import catalog
 from opavm.errors import GitHubLookupError
 
 GITHUB_API_ROOT = "https://api.github.com/repos"
@@ -62,7 +61,7 @@ def _raise_friendly_http_error(exc: httpx.HTTPError) -> GitHubLookupError:
         if status == 404:
             return GitHubLookupError(
                 "Requested release was not found.",
-                "Check version tag, repo override, and access permissions.",
+                "Check version tag and access permissions.",
             )
         if status in {401, 403}:
             return GitHubLookupError(
@@ -80,18 +79,27 @@ def _raise_friendly_http_error(exc: httpx.HTTPError) -> GitHubLookupError:
 
 
 def configured_repo(
-    env_var: str = "OPAVM_GITHUB_REPO",
-    default_repo: str | None = None,
+    default_repo: str = "open-policy-agent/opa",
 ) -> str:
-    fallback = default_repo or catalog.SUPPORTED_TOOLS["opa"].default_repo
-    repo = os.environ.get(env_var, fallback).strip()
+    repo = default_repo.strip()
     parts = repo.split("/")
     if len(parts) != 2 or not parts[0] or not parts[1]:
         raise GitHubLookupError(
-            f"Invalid {env_var} value.",
-            f"Use format: owner/repo (example: {fallback}).",
+            "Invalid repository value.",
+            f"Use format: owner/repo (example: {default_repo}).",
         )
     return repo
+
+
+def validate_repo(repo: str) -> str:
+    normalized = repo.strip()
+    parts = normalized.split("/")
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        raise GitHubLookupError(
+            "Invalid repository value.",
+            "Use format: owner/repo (example: open-policy-agent/opa).",
+        )
+    return normalized
 
 
 def releases_api_url(repo: str) -> str:
@@ -112,7 +120,7 @@ def _version_from_tag(tag: str) -> str:
 
 def fetch_release(version: str, timeout: float = 30.0, repo: str | None = None) -> ReleaseInfo:
     tag = _normalize_tag(version)
-    selected_repo = repo or configured_repo()
+    selected_repo = validate_repo(repo) if repo else configured_repo()
     base_url = releases_api_url(selected_repo)
     url = f"{base_url}/latest" if version == "latest" else f"{base_url}/tags/{tag}"
 
@@ -144,7 +152,7 @@ def fetch_recent_releases(
     if limit < 1:
         raise GitHubLookupError("Limit must be at least 1.", "Try: opavm releases --limit 10")
 
-    selected_repo = repo or configured_repo()
+    selected_repo = validate_repo(repo) if repo else configured_repo()
     base_url = releases_api_url(selected_repo)
     url = f"{base_url}?per_page={min(limit, 100)}"
     try:

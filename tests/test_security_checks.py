@@ -32,8 +32,8 @@ def test_installer_checksum_mismatch_fails(tmp_path: Path, monkeypatch: pytest.M
         ],
     )
     with mock.patch("opavm.installer.platform.normalized_os_arch", return_value=("linux", "amd64")), mock.patch(
-        "opavm.installer.github.configured_repo", return_value="open-policy-agent/opa"
-    ), mock.patch("opavm.installer.github.fetch_release", return_value=release), mock.patch(
+        "opavm.installer.github.fetch_release", return_value=release
+    ) as fetch_release_mock, mock.patch(
         "opavm.installer.github.pick_asset_url", return_value="https://example.test/opa"
     ), mock.patch("opavm.installer.download.fetch_text", return_value="0" * 64), mock.patch(
         "opavm.installer.verify_binary"
@@ -47,6 +47,7 @@ def test_installer_checksum_mismatch_fails(tmp_path: Path, monkeypatch: pytest.M
         with mock.patch("opavm.installer.download.download_binary", side_effect=fake_download):
             with pytest.raises(OpavmError, match="Checksum verification failed"):
                 installer.install("0.62.1")
+    assert fetch_release_mock.call_args.kwargs["repo"] == "open-policy-agent/opa"
 
 
 def test_installer_checksum_match_passes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -60,8 +61,8 @@ def test_installer_checksum_match_passes(tmp_path: Path, monkeypatch: pytest.Mon
         ],
     )
     with mock.patch("opavm.installer.platform.normalized_os_arch", return_value=("linux", "amd64")), mock.patch(
-        "opavm.installer.github.configured_repo", return_value="open-policy-agent/opa"
-    ), mock.patch("opavm.installer.github.fetch_release", return_value=release), mock.patch(
+        "opavm.installer.github.fetch_release", return_value=release
+    ) as fetch_release_mock, mock.patch(
         "opavm.installer.github.pick_asset_url", return_value="https://example.test/opa"
     ), mock.patch("opavm.installer.verify_binary") as verify_mock:
         def fake_download(_url: str, destination: Path, on_progress=None) -> None:
@@ -77,4 +78,5 @@ def test_installer_checksum_match_passes(tmp_path: Path, monkeypatch: pytest.Mon
             installed = installer.install("0.62.1")
 
     assert installed == "0.62.1"
+    assert fetch_release_mock.call_args.kwargs["repo"] == "open-policy-agent/opa"
     verify_mock.assert_called_once()
